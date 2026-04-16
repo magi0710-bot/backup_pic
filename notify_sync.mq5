@@ -13,6 +13,7 @@ input bool   ShowUIPanel     = true;     // 顯示警報面板
 input int    ScanIntervalMS  = 500;
 input bool   ShowAlertList   = true;     // 顯示警報列表(結合於主面板下方)
 input bool   ShowAllSymbolsAlerts = true; // 列表顯示所有商品(否則僅顯示當前圖表)
+input bool   EnableAlertSound     = true; // 啟用警報聲音(與彈窗同步)
 input int    ListX           = 20;
 input int    ListY           = 50;
 
@@ -61,6 +62,7 @@ datetime g_lastResetTS   = 0;
 bool     g_isSwitching   = false;
 bool     g_isPickingPrice = false;
 bool     g_isMinimized    = false;
+bool     g_isAlertWinMinimized = false; // 紀錄獨立警報視窗是否最小化
 int      g_listPage       = 0;  // 記錄目前警報列表分頁
 
 //+------------------------------------------------------------------+
@@ -73,6 +75,17 @@ int OnInit()
    ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, true); // 啟用滑鼠移動事件，供右鍵取價使用
    
    if(ShowUIPanel) CreateNCUI();
+   
+   // 使用 ChartID 作為後綴，使每個視窗的狀態獨立
+   string suffix = "_" + IntegerToString((long)ChartID());
+   
+   if(GlobalVariableCheck("NC_AlertWin_Minimized" + suffix))
+      g_isAlertWinMinimized = (GlobalVariableGet("NC_AlertWin_Minimized" + suffix) == 1);
+   
+   if(GlobalVariableCheck("NC_MainPanel_Minimized" + suffix))
+      g_isMinimized = (GlobalVariableGet("NC_MainPanel_Minimized" + suffix) == 1);
+      
+   UpdateUIVisibility();
    RefreshAlertList();
    // CreateSyncButton();
    
@@ -180,6 +193,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       if(sparam == "NC_BtnMin")
       {
          g_isMinimized = !g_isMinimized;
+         GlobalVariableSet("NC_MainPanel_Minimized_" + IntegerToString((long)ChartID()), g_isMinimized ? 1 : 0);
          UpdateUIVisibility();
          ObjectSetInteger(0, "NC_BtnMin", OBJPROP_STATE, false);
       }
@@ -279,13 +293,32 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       }
 
 
-/*
-      if(sparam == BUTTON_SYNC)
-      {
-         ForceSyncAndReset();
-         ObjectSetInteger(0, BUTTON_SYNC, OBJPROP_STATE, false);
+      if(sparam == "NC_AL_BtnClear") {
+         if(MessageBox("確定要刪除清單中「所有」活躍的警報嗎？", "刪除所有警報", MB_YESNO | MB_ICONWARNING) == IDYES) {
+            for(int i=1; i<=ALERT_MAX_ID; i++) {
+               string k = ALERT_PREFIX + IntegerToString(i) + "_Active";
+               if(GlobalVariableCheck(k)) {
+                  RemoveAlert(i);
+                  DeleteAlertFiles(i);
+                  GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_EMA50");
+                  GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_EMA_TYPE");
+                  GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_EMA_P");
+                  GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_EMA_TF");
+                  GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_BB");
+                  GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_IND_TF");
+               }
+            }
+            RefreshAlertList();
+         }
+         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
       }
-*/
+      
+      if(sparam == "NC_AL_BtnMin") {
+         g_isAlertWinMinimized = !g_isAlertWinMinimized;
+         GlobalVariableSet("NC_AlertWin_Minimized_" + IntegerToString((long)ChartID()), g_isAlertWinMinimized ? 1 : 0);
+         RefreshAlertList();
+         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
+      }
    }
 }
 
@@ -425,9 +458,21 @@ void CheckAlerts()
       if(tp <= 0 || tp == EMPTY_VALUE) continue; // 防禦：無效的 tp 價格不觸發
 
       if((ab == 1 && bid >= tp) || (ab == 0 && bid <= tp)) {
-         SendNotification(ReadAlertMessage(i) + " | " + sym + " @" + DoubleToString(tp, symDigits));
+         string alertMsg = ReadAlertMessage(i) + " | " + sym + " @" + DoubleToString(tp, symDigits);
+         SendNotification(alertMsg);
+         
+         if(EnableAlertSound) {
+            Alert(alertMsg); // 跳出彈窗並播放 MT5 標準聲音
+         } else {
+            Print(alertMsg); // 僅記錄於日誌，不播放聲音
+         }
+         
+         LogAlertToCSV(ReadAlertMessage(i), sym, tp); // 紀錄到 CSV 檔案
+         
          GlobalVariableDel(key); DeleteAlertFiles(i); changed = true;
          GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_EMA50");
+         GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_EMA_TYPE");
+         GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_EMA_P");
          GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_EMA_TF");
          GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_BB");
          GlobalVariableDel(ALERT_PREFIX + IntegerToString(i) + "_IND_TF");
@@ -486,7 +531,7 @@ bool ReadSymbolFromFile(string &s, datetime &t) { int h=FileOpen("MultiTF_Sync.t
 void CreateNCUI() {
    int x = ListX, y = ListY;
    CreatePanel("NC_BG", x-10, y-10, 170, 145, C'30,30,30');
-   CreateLabel("NC_T", x, y, "📡 NotifySync Pro", clrGold, 10);
+   CreateLabel("NC_T", x, y, "Alert Setting", clrGold, 10);
    CreateEdit(OBJ_INPUT_PRICE, x, y+20, 150, 20, "點擊取價");
    CreateEdit(OBJ_INPUT_MSG, x, y+45, 150, 20, "警報訊息...");
    CreateButton(OBJ_BTN_ADD, x, y+70, 48, 22, "取價", clrWhite, C'0,120,60');
@@ -566,17 +611,35 @@ void RefreshAlertList() {
    int baseY = 0, baseX = 0;
    if(ShowAlertWindow) {
       baseX = AlertWinX; baseY = AlertWinY;
-      int winH = 40 + (totalAlerts > 0 ? (MathMin(totalAlerts - g_listPage * MaxAlertsPerPage, MaxAlertsPerPage) * 20) : 20);
+      int winH = 0;
+      if(g_isAlertWinMinimized) {
+         winH = 22; // 最小化高度
+      } else {
+         winH = 40 + (totalAlerts > 0 ? (MathMin(totalAlerts - g_listPage * MaxAlertsPerPage, MaxAlertsPerPage) * 20) : 20);
+      }
       
-      // 背景框：如果不存在才建立，存在的話只更新高度，這能徹底解決閃爍
+      // 背景框
       if(ObjectFind(0, "NC_AL_BG") < 0) CreatePanel("NC_AL_BG", baseX-10, baseY-10, 230, winH, C'30,30,40');
       else ObjectSetInteger(0, "NC_AL_BG", OBJPROP_YSIZE, winH);
       
       CreateLabel("NC_AL_Title", baseX, baseY, "📋 獨立警報清單", clrSkyBlue, 9);
       
+      // 控制鈕位置調整
+      CreateButton("NC_AL_BtnMin", baseX+180, baseY-2, 18, 16, g_isAlertWinMinimized ? "▼" : "▲", clrWhite, C'80,80,80');
+      CreateButton("NC_AL_BtnClear", baseX+200, baseY-2, 18, 16, "✕", clrWhite, C'180,0,0');
+      
+      if(g_isAlertWinMinimized) {
+         // 最小化時，不顯示分頁與列表，刪除殘留物件
+         ObjectDelete(0, "NC_AL_Page");
+         ObjectDelete(0, "NC_AL_BtnUp");
+         ObjectDelete(0, "NC_AL_BtnDn");
+         ChartRedraw(0);
+         return; 
+      }
+
       // 分頁控制鈕
       string pageStr = "Page " + IntegerToString(g_listPage+1) + "/" + IntegerToString(totalPages);
-      CreateLabel("NC_AL_Page", baseX+140, baseY, pageStr, clrSilver, 8);
+      CreateLabel("NC_AL_Page", baseX+135, baseY, pageStr, clrSilver, 8);
       CreateButton("NC_AL_BtnUp", baseX+85, baseY-2, 20, 16, "▲", clrWhite, C'60,60,60');
       CreateButton("NC_AL_BtnDn", baseX+110, baseY-2, 20, 16, "▼", clrWhite, C'60,60,60');
       
@@ -634,6 +697,20 @@ void RefreshAlertList() {
    }
 
    ChartRedraw(0); // 立即執行最後的重繪
+}
+
+void LogAlertToCSV(string msg, string sym, double p) {
+   string fname = "AlertLog.csv";
+   int h = FileOpen(fname, FILE_READ|FILE_WRITE|FILE_CSV|FILE_COMMON|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE);
+   if(h != INVALID_HANDLE) {
+      FileSeek(h, 0, SEEK_END);
+      // 如果文件是空的，寫入標頭
+      if(FileSize(h) == 0) {
+         FileWrite(h, "Time", "Symbol", "Message", "Price");
+      }
+      FileWrite(h, TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS), sym, msg, DoubleToString(p, (int)SymbolInfoInteger(sym, SYMBOL_DIGITS)));
+      FileClose(h);
+   }
 }
 
 void SetStatus(string t) { ObjectSetString(0, OBJ_STATUS, OBJPROP_TEXT, t); }
