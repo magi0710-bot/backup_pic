@@ -22,6 +22,7 @@ input int    AlertWinX        = 250;      // 獨立視窗 X 坐標
 input int    AlertWinY        = 50;       // 獨立視窗 Y 坐標
 input int    MaxAlertsPerPage = 10;       // 每頁顯示幾筆警報
 
+/*
 input group "── 多視窗同步設置 ──"
 input int    SyncBtnX      = 200; // 同步按鈕 X 座標
 input int    SyncBtnY      = 50;  // 同步按鈕 Y 座標
@@ -33,10 +34,13 @@ input ENUM_TIMEFRAMES TF2 = PERIOD_H4;
 input ENUM_TIMEFRAMES TF3 = PERIOD_D1;
 input ENUM_TIMEFRAMES TF4 = PERIOD_W1;
 input ENUM_TIMEFRAMES TF5 = PERIOD_MN1;
+*/
 
 input group "── 指標警報設置 ──"
-input bool   EnableEMA   = true;     // 顯示 EMA 按鈕
-input int    EMAPeriod   = 50;       // EMA 參數
+input bool   EnableEMA   = true;     // 顯示 EMA 按鈕 1
+input int    EMAPeriod   = 50;       // EMA 1 參數
+input bool   EnableEMA2  = true;     // 顯示 EMA 按鈕 2
+input int    EMAPeriod2  = 20;       // EMA 2 參數
 input bool   EnableBB    = true;     // 顯示布林通道按鈕
 input int    BBPeriod    = 5;        // 布林通道參數 (MA)
 input double BBDeviation = 1.0;      // 布林通道標準差
@@ -64,16 +68,16 @@ int      g_listPage       = 0;  // 記錄目前警報列表分頁
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   if(WindowIndex < 0 || WindowIndex > 5) return INIT_PARAMETERS_INCORRECT;
+   // if(WindowIndex < 0 || WindowIndex > 5) return INIT_PARAMETERS_INCORRECT;
    EventSetMillisecondTimer(ScanIntervalMS);
    ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, true); // 啟用滑鼠移動事件，供右鍵取價使用
    
    if(ShowUIPanel) CreateNCUI();
    RefreshAlertList();
-   CreateSyncButton();
+   // CreateSyncButton();
    
    g_lastSymbol = Symbol();
-   g_lastTimestamp = (datetime)GlobalVariableGet("MultiTF_Timestamp");
+   // g_lastTimestamp = (datetime)GlobalVariableGet("MultiTF_Timestamp");
    
    return INIT_SUCCEEDED;
 }
@@ -96,7 +100,7 @@ void OnDeinit(const int reason)
 void OnTimer() 
 { 
    CheckAlerts(); 
-   CheckSync();
+   // CheckSync();
 }
 
 //+------------------------------------------------------------------+
@@ -195,28 +199,30 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          ObjectSetInteger(0, OBJ_BTN_ADD, OBJPROP_STATE, false);
       }
 
-      if(sparam == "NC_BtnEMA")
+      if(sparam == "NC_BtnEMA" || sparam == "NC_BtnEMA2")
       {
-         string emaName = IntegerToString(EMAPeriod) + " EMA";
+         int p_ema = (sparam == "NC_BtnEMA") ? EMAPeriod : EMAPeriod2;
+         string emaName = IntegerToString(p_ema) + " EMA";
          int res = MessageBox("確定要在當前圖表新增追蹤 " + emaName + " 的動態警報嗎？", emaName + " 警報確認", MB_YESNO | MB_ICONQUESTION);
          if(res == IDYES) {
-            int handle = GetCachedEMAHandle(Symbol(), Period());
+            int handle = GetCachedEMAHandle(Symbol(), Period(), p_ema);
             double emaBuf[1];
             if(handle != INVALID_HANDLE && CopyBuffer(handle, 0, 0, 1, emaBuf) > 0) {
                double currentEma = NormalizeDouble(emaBuf[0], _Digits);
-               string finalMsg = GetTfString() + IntegerToString(EMAPeriod) + "ema";
+               string finalMsg = GetTfString() + IntegerToString(p_ema) + "ema";
                int alertID = AddPriceAlert(Symbol(), currentEma, finalMsg);
                if(alertID > 0) {
-                  GlobalVariableSet(ALERT_PREFIX + IntegerToString(alertID) + "_EMA50", 1);
+                  GlobalVariableSet(ALERT_PREFIX + IntegerToString(alertID) + "_EMA_TYPE", 1);
+                  GlobalVariableSet(ALERT_PREFIX + IntegerToString(alertID) + "_EMA_P", p_ema);
                   GlobalVariableSet(ALERT_PREFIX + IntegerToString(alertID) + "_EMA_TF", Period());
                   SetStatus("✓ 已新增 " + finalMsg + " 警報 ID=" + IntegerToString(alertID));
                   RefreshAlertList();
                }
             } else {
-               SetStatus("無法獲取 EMA 數據");
+               SetStatus("無法獲獲 EMA 數據");
             }
          }
-         ObjectSetInteger(0, "NC_BtnEMA", OBJPROP_STATE, false);
+         ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
       }
 
       if(sparam == "NC_BtnBBH" || sparam == "NC_BtnBBL")
@@ -251,6 +257,8 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          RemoveAlert(alertID);
          DeleteAlertFiles(alertID);
          GlobalVariableDel(ALERT_PREFIX + IntegerToString(alertID) + "_EMA50");
+         GlobalVariableDel(ALERT_PREFIX + IntegerToString(alertID) + "_EMA_TYPE");
+         GlobalVariableDel(ALERT_PREFIX + IntegerToString(alertID) + "_EMA_P");
          GlobalVariableDel(ALERT_PREFIX + IntegerToString(alertID) + "_EMA_TF");
          GlobalVariableDel(ALERT_PREFIX + IntegerToString(alertID) + "_BB");
          GlobalVariableDel(ALERT_PREFIX + IntegerToString(alertID) + "_IND_TF");
@@ -271,11 +279,13 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       }
 
 
+/*
       if(sparam == BUTTON_SYNC)
       {
          ForceSyncAndReset();
          ObjectSetInteger(0, BUTTON_SYNC, OBJPROP_STATE, false);
       }
+*/
    }
 }
 
@@ -302,35 +312,36 @@ int GetCachedBandsHandle(string sym, ENUM_TIMEFRAMES tf) {
    return INVALID_HANDLE;
 }
 
-int GetCachedEMAHandle(string sym, ENUM_TIMEFRAMES tf) {
-   static int handles[6] = {INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE};
-   static ENUM_TIMEFRAMES tfs[6] = {0};
-   static string syms[6] = {""};
-   for(int i=0; i<6; i++) {
-      if(handles[i] != INVALID_HANDLE && tfs[i] == tf && syms[i] == sym)
+int GetCachedEMAHandle(string sym, ENUM_TIMEFRAMES tf, int period) {
+   static int handles[10] = {INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE,INVALID_HANDLE};
+   static ENUM_TIMEFRAMES tfs[10] = {0};
+   static string syms[10] = {""};
+   static int periods[10] = {0};
+   for(int i=0; i<10; i++) {
+      if(handles[i] != INVALID_HANDLE && tfs[i] == tf && syms[i] == sym && periods[i] == period)
          return handles[i];
    }
-   for(int i=0; i<6; i++) {
-      if(handles[i] == INVALID_HANDLE || syms[i] != sym) {
+   for(int i=0; i<10; i++) {
+      if(handles[i] == INVALID_HANDLE || (syms[i] != sym && i>=9)) { 
          if(handles[i] != INVALID_HANDLE) IndicatorRelease(handles[i]);
-         handles[i] = iMA(sym, tf, EMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
-         tfs[i] = tf; syms[i] = sym;
+         handles[i] = iMA(sym, tf, period, 0, MODE_EMA, PRICE_CLOSE);
+         tfs[i] = tf; syms[i] = sym; periods[i] = period;
          return handles[i];
       }
    }
    return INVALID_HANDLE;
 }
 
-string GetTfString() {
-   ENUM_TIMEFRAMES tf = Period();
+string GetTfString(ENUM_TIMEFRAMES tf = PERIOD_CURRENT) {
+   if(tf == PERIOD_CURRENT) tf = Period();
    if(tf == PERIOD_M1) return "1m";
    if(tf == PERIOD_M5) return "5m";
    if(tf == PERIOD_M15) return "15m";
    if(tf == PERIOD_M30) return "30m";
-   if(tf == PERIOD_H1) return "1H";
-   if(tf == PERIOD_H4) return "4H";
-   if(tf == PERIOD_D1) return "1D";
-   if(tf == PERIOD_W1) return "1W";
+   if(tf == PERIOD_H1) return "1h";
+   if(tf == PERIOD_H4) return "4h";
+   if(tf == PERIOD_D1) return "1d";
+   if(tf == PERIOD_W1) return "1w";
    if(tf == PERIOD_MN1) return "MN";
    return IntegerToString(tf);
 }
@@ -348,17 +359,20 @@ void CheckAlerts()
       int symDigits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
       if(symDigits <= 0) symDigits = 5; // 防禦：如果載入中取不到位數，給個稍微正常的預設值
       
-      // 動態更新 50 EMA 價格
-      string emaKey = ALERT_PREFIX + IntegerToString(i) + "_EMA50";
-      string bbKey  = ALERT_PREFIX + IntegerToString(i) + "_BB";
+      // 動態更新 EMA 價格
+      string emaTypeKey = ALERT_PREFIX + IntegerToString(i) + "_EMA_TYPE";
+      string emaOldKey  = ALERT_PREFIX + IntegerToString(i) + "_EMA50";
+      string bbKey      = ALERT_PREFIX + IntegerToString(i) + "_BB";
       bool isDynamicAlert = false;
       int tftf = 0;
-      if(GlobalVariableCheck(emaKey) && GlobalVariableGet(emaKey) == 1) {
+      
+      if((GlobalVariableCheck(emaTypeKey) && GlobalVariableGet(emaTypeKey) == 1) || (GlobalVariableCheck(emaOldKey) && GlobalVariableGet(emaOldKey) == 1)) {
          tftf = (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_EMA_TF");
+         int p_ema = GlobalVariableCheck(ALERT_PREFIX + IntegerToString(i) + "_EMA_P") ? (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_EMA_P") : 50; 
          isDynamicAlert = true;
          // 只讓正確週期的視窗負責更新 EMA
          if(tftf == Period()) {
-            int hMA = GetCachedEMAHandle(ReadAlertSymbol(i), (ENUM_TIMEFRAMES)tftf);
+            int hMA = GetCachedEMAHandle(ReadAlertSymbol(i), (ENUM_TIMEFRAMES)tftf, p_ema);
             if(hMA != INVALID_HANDLE) {
                double emaBuf[1];
                if(CopyBuffer(hMA, 0, 0, 1, emaBuf) > 0) {
@@ -402,8 +416,8 @@ void CheckAlerts()
       if(isDynamicAlert) {
          if(tftf != Period()) continue;
       } else {
-         // 若是背景切換掉的商品，靜態警報交由主視窗(WindowIndex==0)檢測，避免四視窗重複發送
-         if(sym != Symbol() && WindowIndex != 0) continue;
+         // 若是背景切換掉的商品，由當前商品自行檢測
+         if(sym != Symbol()) continue;
       }
 
       double bid = SymbolInfoDouble(sym, SYMBOL_BID), ask = SymbolInfoDouble(sym, SYMBOL_ASK);
@@ -422,6 +436,7 @@ void CheckAlerts()
    if(changed || emaUpdated) RefreshAlertList();
 }
 
+/*
 void CheckSync()
 {
    if(g_isSwitching) return;
@@ -463,6 +478,7 @@ ENUM_TIMEFRAMES GetDefaultTF(int idx) { if(idx==0) return TF0; if(idx==1) return
 void WriteSymbolToFile(string s, datetime t) { int h=FileOpen("MultiTF_Sync.txt",FILE_WRITE|FILE_TXT|FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE); if(h!=INVALID_HANDLE){FileWriteString(h,s+"\n"+IntegerToString(t));FileClose(h);}}
 
 bool ReadSymbolFromFile(string &s, datetime &t) { int h=FileOpen("MultiTF_Sync.txt",FILE_READ|FILE_TXT|FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE); if(h==INVALID_HANDLE)return false; s=FileReadString(h); t=(datetime)StringToInteger(FileReadString(h)); FileClose(h); return true; }
+*/
 
 //+------------------------------------------------------------------+
 //| UI 繪製函式區                                                    |
@@ -474,7 +490,8 @@ void CreateNCUI() {
    CreateEdit(OBJ_INPUT_PRICE, x, y+20, 150, 20, "點擊取價");
    CreateEdit(OBJ_INPUT_MSG, x, y+45, 150, 20, "警報訊息...");
    CreateButton(OBJ_BTN_ADD, x, y+70, 48, 22, "取價", clrWhite, C'0,120,60');
-   if(EnableEMA) CreateButton("NC_BtnEMA", x+51, y+70, 48, 22, IntegerToString(EMAPeriod)+"ema", clrWhite, C'40,80,180');
+   if(EnableEMA) CreateButton("NC_BtnEMA", x+51, y+70, 48, 22, IntegerToString(EMAPeriod)+"e", clrWhite, C'40,80,180');
+   if(EnableEMA2) CreateButton("NC_BtnEMA2", x+102, y+70, 48, 22, IntegerToString(EMAPeriod2)+"e", clrWhite, C'70,120,200');
    if(EnableBB) {
       CreateButton("NC_BtnBBH", x, y+95, 73, 22, "📈 BBH", clrWhite, C'180,40,180');
       CreateButton("NC_BtnBBL", x+77, y+95, 73, 22, "📉 BBL", clrWhite, C'180,40,180');
@@ -483,6 +500,7 @@ void CreateNCUI() {
    CreateLabel(OBJ_STATUS, x, y+120, "就緒", clrGray, 8);
 }
 
+/*
 void CreateSyncButton() { 
    int x = SyncBtnX;
    int y = SyncBtnY;
@@ -501,6 +519,7 @@ void CreateSyncButton() {
    ObjectSetInteger(0, BUTTON_SYNC, OBJPROP_FONTSIZE, 8); 
    ObjectSetInteger(0, BUTTON_SYNC, OBJPROP_TIMEFRAMES, OBJ_ALL_PERIODS);
 }
+*/
 
 void RefreshAlertList() {
    ObjectsDeleteAll(0, OBJ_LIST_PREFIX); // 只刪除警報文字項目
@@ -575,11 +594,15 @@ void RefreshAlertList() {
    for(int c = startIdx; c < endIdx; c++) {
       int i = validAlerts[c];
       string sym = ReadAlertSymbol(i);
-      bool isEma = (GlobalVariableCheck(ALERT_PREFIX + IntegerToString(i) + "_EMA50") && (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_EMA50") == 1);
+      bool isEma = (GlobalVariableCheck(ALERT_PREFIX + IntegerToString(i) + "_EMA_TYPE") && (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_EMA_TYPE") == 1) || 
+                   (GlobalVariableCheck(ALERT_PREFIX + IntegerToString(i) + "_EMA50") && (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_EMA50") == 1);
       bool isBB  = GlobalVariableCheck(ALERT_PREFIX + IntegerToString(i) + "_BB");
       string dynSuffix = "";
-      if(isEma) { dynSuffix = " (EMA)"; } 
-      else if(isBB) { 
+      if(isEma) { 
+         int p_ema = GlobalVariableCheck(ALERT_PREFIX + IntegerToString(i) + "_EMA_P") ? (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_EMA_P") : 50;
+         dynSuffix = "EMA" + IntegerToString(p_ema); 
+      } 
+      else if(isBB) {
          int bbMode = (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_BB");
          dynSuffix = (bbMode == 1) ? " (BBH)" : " (BBL)";
       }
@@ -588,7 +611,23 @@ void RefreshAlertList() {
       int ab = (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_Above");
       int symDigits = (int)SymbolInfoInteger(sym, SYMBOL_DIGITS);
       if(symDigits <= 0) symDigits = 5;
-      string lblTxt = sym + " ID"+(string)i+(ab==1?"▲":"▼")+DoubleToString(p, symDigits) + dynSuffix;
+
+      string displayInfo = "";
+      if(isEma) {
+         int targetTF = (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_EMA_TF");
+         displayInfo = GetTfString((ENUM_TIMEFRAMES)targetTF) + "EMA";
+      } else if(isBB) {
+         int targetTF = (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_IND_TF");
+         int bbMode = (int)GlobalVariableGet(ALERT_PREFIX + IntegerToString(i) + "_BB");
+         displayInfo = GetTfString((ENUM_TIMEFRAMES)targetTF) + (bbMode == 1 ? "BBH" : "BBL");
+      } else {
+         displayInfo = DoubleToString(p, symDigits);
+      }
+
+      string lblTxt = sym + " " + displayInfo;
+      if(isEma || isBB) lblTxt += " @" + DoubleToString(p, symDigits);
+      lblTxt += (ab==1?" ▲":" ▼");
+      
       CreateLabel(OBJ_LIST_PREFIX+"L"+(string)i, baseX, baseY+r*20, lblTxt, (ab==1?clrLime:clrTomato), 8);
       CreateButton(OBJ_LIST_PREFIX+"Del_"+(string)i, baseX+180, baseY-2+r*20, 30, 16, "✕", clrWhite, C'150,0,0');
       r++;
@@ -633,6 +672,7 @@ void UpdateUIVisibility() {
    ObjectSetInteger(0, OBJ_INPUT_MSG, OBJPROP_TIMEFRAMES, tf);
    ObjectSetInteger(0, OBJ_BTN_ADD, OBJPROP_TIMEFRAMES, tf);
    ObjectSetInteger(0, "NC_BtnEMA", OBJPROP_TIMEFRAMES, tf);
+   ObjectSetInteger(0, "NC_BtnEMA2", OBJPROP_TIMEFRAMES, tf);
    ObjectSetInteger(0, "NC_BtnBBH", OBJPROP_TIMEFRAMES, tf);
    ObjectSetInteger(0, "NC_BtnBBL", OBJPROP_TIMEFRAMES, tf);
    ObjectSetInteger(0, OBJ_STATUS, OBJPROP_TIMEFRAMES, tf);
