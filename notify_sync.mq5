@@ -620,10 +620,10 @@ void RefreshAlertList() {
       }
       
       // 背景框
-      if(ObjectFind(0, "NC_AL_BG") < 0) CreatePanel("NC_AL_BG", baseX-10, baseY-10, 230, winH, C'30,30,40');
+      if(ObjectFind(0, "NC_AL_BG") < 0) CreatePanel("NC_AL_BG", baseX-10, baseY-10, 230, winH, clrBlack);
       else ObjectSetInteger(0, "NC_AL_BG", OBJPROP_YSIZE, winH);
       
-      CreateLabel("NC_AL_Title", baseX, baseY, "📋 獨立警報清單", clrSkyBlue, 9);
+      CreateLabel("NC_AL_Title", baseX, baseY, "📋 獨立警報清單", clrWhite, 9);
       
       // 控制鈕位置調整
       CreateButton("NC_AL_BtnMin", baseX+180, baseY-2, 18, 16, g_isAlertWinMinimized ? "▼" : "▲", clrWhite, C'80,80,80');
@@ -640,7 +640,7 @@ void RefreshAlertList() {
 
       // 分頁控制鈕
       string pageStr = "Page " + IntegerToString(g_listPage+1) + "/" + IntegerToString(totalPages);
-      CreateLabel("NC_AL_Page", baseX+135, baseY, pageStr, clrSilver, 8);
+      CreateLabel("NC_AL_Page", baseX+135, baseY, pageStr, clrWhite, 8);
       CreateButton("NC_AL_BtnUp", baseX+85, baseY-2, 20, 16, "▲", clrWhite, C'60,60,60');
       CreateButton("NC_AL_BtnDn", baseX+110, baseY-2, 20, 16, "▼", clrWhite, C'60,60,60');
       
@@ -692,7 +692,7 @@ void RefreshAlertList() {
       if(isEma || isBB) lblTxt += " @" + DoubleToString(p, symDigits);
       lblTxt += (ab==1?" ▲":" ▼");
       
-      CreateLabel(OBJ_LIST_PREFIX+"L"+(string)i, baseX, baseY+r*20, lblTxt, (ab==1?clrLime:clrTomato), 8);
+      CreateLabel(OBJ_LIST_PREFIX+"L"+(string)i, baseX, baseY+r*20, lblTxt, clrWhite, 8);
       CreateButton(OBJ_LIST_PREFIX+"Del_"+(string)i, baseX+180, baseY-2+r*20, 30, 16, "✕", clrWhite, C'150,0,0');
       r++;
    }
